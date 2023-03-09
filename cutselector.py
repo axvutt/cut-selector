@@ -7,10 +7,24 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 class CutSelector:
+    """ Mouse and keyboard controls for changing cuts
+
+    A CutSelector object is bound to a Figure containing a Axes object.
+    When plotting 1D cuts of a multi-variate function whose values are stored in fx,
+    a CutSelector allows to change the displayed cut with mouse and keyboard.
+    Use the scroll wheel of the mouse to change the cut index along a given coordinate.
+    Press 'up' or 'down' to change the coordinate whose index is changed.
+
+    Future upgrades:
+    - Update several curves plotted in the same Axes (so far, only the first one)
+    - Make controls active for one Axes at a time (does not work on subplots so far)
+    - Optional display of cut variables/indices
+    """
     def __init__(self, ax, fx, axis=0, init_indices=None, order="C"):
         self.ax = ax
         self.fx = fx
         self.shape = fx.shape
+
         assert axis >= 0 and axis < len(fx.shape),  "CutSelector.__init__(): axis should be 0 <= axis < {}".format(len(fx.shape))
         self.axis_dim = axis
 
