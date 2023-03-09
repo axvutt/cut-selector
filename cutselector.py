@@ -24,6 +24,8 @@ class CutSelector:
         self.ax = ax
         self.fx = fx
         self.shape = fx.shape
+        if len(fx.shape) == 1:
+            return
 
         assert axis >= 0 and axis < len(fx.shape),  "CutSelector.__init__(): axis should be 0 <= axis < {}".format(len(fx.shape))
         self.axis_dim = axis
