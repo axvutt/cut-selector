@@ -20,60 +20,76 @@ class CutSelector:
     - Make controls active for one Axes at a time (does not work on subplots so far)
     - Optional display of cut variables/indices
     """
-    def __init__(self, ax, fx, axis=0, init_indices=None, order="C"):
-        self.ax = ax
-        self.fx = fx
-        self.shape = fx.shape
-        if len(fx.shape) == 1:
-            return
-
-        assert axis >= 0 and axis < len(fx.shape),  "CutSelector.__init__(): axis should be 0 <= axis < {}".format(len(fx.shape))
-        self.axis_dim = axis
-
-        if init_indices is None :
-            self.saved_indices = [0 for _ in range(len(fx.shape))]
-        else :
-            assert len(init_indices) == len(fx.shape),  "CutSelector.__init__(): init_indices must be of length len(fx.shape)."
-            self.saved_indices = init_indices
-            self.saved_indices[axis] = -1
-
-        assert order == "C" or order == "F", "CutSelector.__init__(): order should be either \"C\" or \"F\"."
+    def __init__(self, fig, axs, F, init_indices=None, order="C"):
+        self.fig = fig
+        self.axs = axs
+        self.F = F
+        self.shape = F[0].shape
+        self.Nd = len(self.shape)
+        self.saved_indices = init_indices
         self.order = order
-
-        for d,si in enumerate(self.saved_indices):
-            if si != -1:
-                self.moving_dim = d
-                break
-
-        self.line, = ax.get_lines()
-        self.cid_scroll = self.line.figure.canvas.mpl_connect('scroll_event', self.on_scroll)
-        self.cid_press = self.line.figure.canvas.mpl_connect('key_release_event', self.on_key_release)
-        self.cid_release = self.line.figure.canvas.mpl_connect('key_press_event', self.on_key_pressed)
+        self.moving_dim = 0
+        self.lines = dict()
+        self.cid_scroll = self.fig.canvas.mpl_connect('scroll_event', self.on_scroll)
+        self.cid_press = self.fig.canvas.mpl_connect('key_release_event', self.on_key_release)
+        self.cid_release = self.fig.canvas.mpl_connect('key_press_event', self.on_key_pressed)
         self.fast_scroll = False
 
-    def redraw(self):
-        indices = self.saved_indices
+        # Do nothing if 1d data
+        if self.Nd == 1:
+            return
 
-        start_list = deepcopy(indices)
-        start_list[start_list.index(-1)] = 0
-        start = CutSelector.flat_index(start_list, self.shape, self.order)
+        # Check that F data shape is consistent
+        assert all([Fi.shape == self.shape for Fi in F]), "Not all elements " \
+                + f"of F have the same shape {[Fi.shape for Fi in F]}."
+
+        # Define initial cut indices
+        if init_indices is None :
+            self.saved_indices = [0 for _ in range(self.Nd)]
+        else :
+            assert len(init_indices) == self.Nd,  "CutSelector.__init__(): init_indices must be of length len(F.shape)."
+
+        # Remember if F array is stored in row-major or column-major indexing
+        assert order == "C" or order == "F", "CutSelector.__init__(): order should be either \"C\" or \"F\"."
+        if order == "F":
+            raise(NotImplementedError, "Sorry, only C-style row major indexing for the moment.")
         
-        stop_list = deepcopy(indices)
-        stop_list[stop_list.index(-1)] = self.shape[self.axis_dim]
-        stop = CutSelector.flat_index(stop_list, self.shape, self.order)
+        # Store line objects that are shown in the axes
+        for ax in axs:
+            self.lines[ax] = ax.get_lines()
 
-        step = 1
-        if self.order == "C":
-            for dim in range(self.axis_dim+1,len(self.shape)):
-                step *= self.shape[dim]
-        elif self.order == "F":
-            for dim in range(self.axis_dim+1,len(self.shape)):
-                step *= self.shape[dim]
+    def redraw(self):
+        # Update graphs in each Axes object
+        for dim, ax in enumerate(self.axs):
+            if dim == self.moving_dim:  # ... except the one of the scrolled coordinate
+                continue
 
-        x, _ = self.line.get_data()
-        y = self.fx.flatten()[start:stop:step]
-        self.line.set_data(x, y)
-        self.line.figure.canvas.draw()
+            # Get flat indices of points if F appearing in the curve
+            # Starting index
+            start_list = deepcopy(self.saved_indices)
+            start_list[dim] = 0
+            start = CutSelector.flat_index(start_list, self.shape, self.order)
+            
+            # Ending index
+            stop_list = deepcopy(self.saved_indices)
+            stop_list[dim] = self.shape[dim]
+            stop = CutSelector.flat_index(stop_list, self.shape, self.order)
+
+            # Steps over flat indices
+            step = 1
+            if self.order == "C":
+                for d in range(dim+1,len(self.shape)):
+                    step *= self.shape[d]
+            elif self.order == "F":
+                for d in range(dim+1,len(self.shape)):
+                    step *= self.shape[d]
+            
+            # Update lines in the Axes object
+            for n,line in enumerate(self.lines[ax]):
+                x, _ = line.get_data()
+                y = self.F[n].flatten()[start:stop:step]
+                line.set_data(x, y)
+                line.figure.canvas.draw()
 
     def on_key_pressed(self, event):
         if event.key == 'shift':
@@ -94,9 +110,6 @@ class CutSelector:
             shift = -1
 
         temp_dim = self.moving_dim + shift
-        if temp_dim == self.axis_dim :
-            temp_dim += shift
-
         if temp_dim >= 0 and temp_dim < len(self.shape):
             self.moving_dim = temp_dim
 
@@ -136,19 +149,32 @@ def main(argv):
     x1, x2, y1, y2, z1, z2 = (-3,3,-2,2,0.1,3)
     Nx, Ny, Nz = (51,51,21)
     X, Y, Z = np.mgrid[x1:x2:Nx*1j, y1:y2:Ny*1j, z1:z2:Nz*1j]
-    F = X*np.cos(2*np.pi*Y)*np.exp(-0.5 * ((X/Z)**2 + (Y/Z)**2) )
+    F1 = X*np.cos(2*np.pi*Y)*np.exp(-0.5 * ((X/Z)**2 + (Y/Z)**2) )
+    F2 = np.exp(-0.5 * ((X-Z)**2 + (Y-2*Z)**2))
 
-    fig, ax = plt.subplots()
-    ax.plot(X[:, 0, 0].flatten(), F[:, Ny//2, Nz//2].flatten(), marker='x')
-    ax.set_ylim((np.min(F), np.max(F)))
+    fig, axs = plt.subplots(1,3)
+    
+    ax = axs[0]
+    ax.plot(X[:, 0, 0].flatten(), F1[:, Ny//2, Nz//2].flatten(), marker='x')
+    ax.plot(X[:, 0, 0].flatten(), F2[:, Ny//2, Nz//2].flatten(), marker='+')
+    ax.set_ylim((np.min(F1), np.max(F1)))
     ax.set_xlabel(r"$x$")
-    cs = CutSelector(ax, F, 0, [0, Ny//2, Nz//2])
+    
+    ax = axs[1]
+    ax.plot(Y[0, :, 0].flatten(), F1[Nx//2, :, Nz//2].flatten(), marker='x')
+    ax.plot(Y[0, :, 0].flatten(), F2[Nx//2, :, Nz//2].flatten(), marker='+')
+    ax.set_ylim((np.min(F1), np.max(F1)))
+    ax.set_xlabel(r"$y$")
+    
+    ax = axs[2]
+    ax.plot(Z[0, 0, :].flatten(), F1[Nz//2, Nz//2, :].flatten(), marker='x')
+    ax.plot(Z[0, 0, :].flatten(), F2[Nz//2, Nz//2, :].flatten(), marker='+')
+    ax.set_ylim((np.min(F1), np.max(F1)))
+    ax.set_xlabel(r"$z$")
 
-    fig2, ax2 = plt.subplots()
-    ax2.plot(Y[0, :, 0].flatten(), F[Nx//2, :, Nz//2].flatten(), marker='x')
-    ax2.set_ylim((np.min(F), np.max(F)))
-    ax2.set_xlabel(r"$y$")
-    cs2 = CutSelector(ax2, F, 1, [Nx//2, 0, Nz//2])
+    for ax in axs:
+        ax.set_ylabel(r"$F(x,y,z)$")
+    cs = CutSelector(fig, axs, (F1,F2), [Nx//2, Ny//2, Nz//2])
 
     plt.show()
 
