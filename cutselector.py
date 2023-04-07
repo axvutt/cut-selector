@@ -48,6 +48,8 @@ class CutSelector:
         self.line, = ax.get_lines()
         self.cid_scroll = self.line.figure.canvas.mpl_connect('scroll_event', self.on_scroll)
         self.cid_press = self.line.figure.canvas.mpl_connect('key_release_event', self.on_key_release)
+        self.cid_release = self.line.figure.canvas.mpl_connect('key_press_event', self.on_key_pressed)
+        self.fast_scroll = False
 
     def redraw(self):
         indices = self.saved_indices
@@ -73,8 +75,16 @@ class CutSelector:
         self.line.set_data(x, y)
         self.line.figure.canvas.draw()
 
+    def on_key_pressed(self, event):
+        if event.key == 'shift':
+            self.fast_scroll = True
+
     def on_key_release(self, event):
-        if event.key not in ['up', 'down']:
+        if event.key not in ['up', 'down', 'shift']:
+            return
+
+        if event.key == 'shift':
+            self.fast_scroll = False
             return
 
         shift = 0
@@ -94,6 +104,9 @@ class CutSelector:
         
     def on_scroll(self,event):
         s = int(event.step)
+        if self.fast_scroll:
+            s *= (self.shape[self.moving_dim]-1)//10
+
         i = self.saved_indices[self.moving_dim] 
         if s<0:
             i = np.max((0, i+s))
