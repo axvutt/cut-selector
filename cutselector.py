@@ -19,9 +19,10 @@ class CutSelector:
     Future upgrades:
     - Optional display of cut variables/indices
     """
-    def __init__(self, fig, axs, F, init_indices=None, order="C"):
+    def __init__(self, fig, axs, x, F, init_indices=None, order="C", show_coords=True):
         self.fig = fig
         self.axs = axs
+        self.x = x
         self.F = F
         self.shape = F[0].shape
         self.Nd = len(self.shape)
@@ -33,6 +34,7 @@ class CutSelector:
         self.cid_press = self.fig.canvas.mpl_connect('key_release_event', self.on_key_release)
         self.cid_release = self.fig.canvas.mpl_connect('key_press_event', self.on_key_pressed)
         self.fast_scroll = False
+        self.vlines = None
 
         # Do nothing if 1d data
         if self.Nd == 1:
@@ -41,6 +43,9 @@ class CutSelector:
         # Check that F data shape is consistent
         assert all([Fi.shape == self.shape for Fi in F]), "Not all elements " \
                 + f"of F have the same shape {[Fi.shape for Fi in F]}."
+        assert tuple([len(xi) for xi in x]) == self.shape, \
+                "Inconsistent coordinates vs function values sizes, " \
+                + f"expecting {self.shape}."
 
         # Define initial cut indices
         if init_indices is None :
@@ -57,7 +62,28 @@ class CutSelector:
         for ax in axs:
             self.lines[ax] = ax.get_lines()
 
-    def redraw(self):
+        # Show vertical lines corresponding to the cut coordinates
+        if show_coords:
+            self.vlines = []
+            for dim, ax in enumerate(self.axs):
+                line = ax.axvline(self.x[dim][self.saved_indices[dim]], color='k')
+                self.vlines.append(line)
+            self.updateCoordCut()
+
+    def updateCoordCut(self):
+        if self.vlines is None:
+            return
+
+        for dim, line in enumerate(self.vlines):
+            x = self.x[dim][self.saved_indices[dim]]
+            _, y = line.get_data()
+            line.set_data(x, y)
+            if dim == self.moving_dim:
+                line.set_linestyle('-')
+            else:
+                line.set_linestyle('--')
+
+    def updateCurves(self):
         # Update graphs in each Axes object
         for dim, ax in enumerate(self.axs):
             if dim == self.moving_dim:  # ... except the one of the scrolled coordinate
@@ -88,7 +114,10 @@ class CutSelector:
                 x, _ = line.get_data()
                 y = self.F[n].flatten()[start:stop:step]
                 line.set_data(x, y)
-                line.figure.canvas.draw()
+
+    def redraw(self):
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
 
     def on_key_pressed(self, event):
         if event.key == 'shift':
@@ -111,8 +140,8 @@ class CutSelector:
         temp_dim = self.moving_dim + shift
         if temp_dim >= 0 and temp_dim < len(self.shape):
             self.moving_dim = temp_dim
-
-        # print(f"Now controlling {self.moving_dim}")
+            self.updateCoordCut()
+            self.redraw()
         
     def on_scroll(self,event):
         s = int(event.step)
@@ -126,6 +155,8 @@ class CutSelector:
             i = np.min((self.shape[self.moving_dim]-1, i+s))
         self.saved_indices[self.moving_dim] = i
         # print(f"Scrolled by {s}. Now i = {i}")
+        self.updateCoordCut()
+        self.updateCurves()
         self.redraw()
 
     @staticmethod
@@ -147,6 +178,9 @@ class CutSelector:
 def main(argv):
     x1, x2, y1, y2, z1, z2 = (-3,3,-2,2,0.1,3)
     Nx, Ny, Nz = (51,51,21)
+    x = np.linspace(x1,x2,Nx)
+    y = np.linspace(y1,y2,Ny)
+    z = np.linspace(z1,z2,Nz)
     X, Y, Z = np.mgrid[x1:x2:Nx*1j, y1:y2:Ny*1j, z1:z2:Nz*1j]
     F1 = X*np.cos(2*np.pi*Y)*np.exp(-0.5 * ((X/Z)**2 + (Y/Z)**2) )
     F2 = np.exp(-0.5 * ((X-Z)**2 + (Y-2*Z)**2))
@@ -173,7 +207,7 @@ def main(argv):
 
     for ax in axs:
         ax.set_ylabel(r"$F(x,y,z)$")
-    cs = CutSelector(fig, axs, (F1,F2), [Nx//2, Ny//2, Nz//2])
+    cs = CutSelector(fig, axs, (x,y,z), (F1,F2), [Nx//2, Ny//2, Nz//2])
 
     plt.show()
 
