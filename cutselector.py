@@ -19,14 +19,14 @@ class CutSelector:
     Future upgrades:
     - Optional display of cut variables/indices
     """
-    def __init__(self, fig, axs, x, F, init_indices=None, order="C", show_coords=True):
+    def __init__(self, fig, axs, x, F, init_indices: list = [], order="C", show_coords=True):
         self.fig = fig
         self.axs = axs
         self.x = x
         self.F = F
         self.shape = F[0].shape
         self.Nd = len(self.shape)
-        self.saved_indices = init_indices
+        self.saved_indices = list(init_indices)
         self.order = order
         self.moving_dim = 0
         self.lines = dict()
@@ -48,7 +48,7 @@ class CutSelector:
                 + f"expecting {self.shape}."
 
         # Define initial cut indices
-        if init_indices is None :
+        if not init_indices :
             self.saved_indices = [0 for _ in range(self.Nd)]
         else :
             assert len(init_indices) == self.Nd,  "CutSelector.__init__(): init_indices must be of length len(F.shape)."
