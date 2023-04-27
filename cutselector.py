@@ -35,6 +35,7 @@ class CutSelector:
         self.cid_release = self.fig.canvas.mpl_connect('key_press_event', self.on_key_pressed)
         self.fast_scroll = False
         self.vlines = None
+        self.coord_labels = None
 
         # Do nothing if 1d data
         if self.Nd == 1:
@@ -65,19 +66,30 @@ class CutSelector:
         # Show vertical lines corresponding to the cut coordinates
         if show_coords:
             self.vlines = []
+            self.coord_labels = []
             for dim, ax in enumerate(self.axs):
-                line = ax.axvline(self.x[dim][self.saved_indices[dim]], color='k')
+                the_x = self.x[dim][self.saved_indices[dim]]
+                line = ax.axvline(the_x, color='k')
                 self.vlines.append(line)
+                label = ax.annotate("{:.3f}".format(the_x),
+                        (the_x, 1),
+                        ha='left', va='top',
+                        xycoords=('data','axes fraction'),
+                        in_layout=False
+                        )
+                self.coord_labels.append(label)
             self.updateCoordCut()
 
     def updateCoordCut(self):
         if self.vlines is None:
             return
 
-        for dim, line in enumerate(self.vlines):
+        for dim, (line, label) in enumerate(zip(self.vlines, self.coord_labels)):
             x = self.x[dim][self.saved_indices[dim]]
             _, y = line.get_data()
             line.set_data(x, y)
+            label.set_text("{:.3f}".format(x))
+            label.set_x(x)
             if dim == self.moving_dim:
                 line.set_linestyle('-')
             else:
